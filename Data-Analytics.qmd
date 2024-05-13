@@ -1,0 +1,652 @@
+---
+title: "Final Project"
+author: "Oghenemalu Ighoiye, 22208232"
+format: 
+  html:
+   embed-resources: true
+---
+
+## Packages and installations
+
+The following packages and libraries are need to run this analysis. Packages have been commented out to avoid errors
+
+```{r}
+#install.packages("plotly")
+#install.packages("caret")
+#install.packages("randomForest")
+#install.packages("fastDummies")
+```
+
+```{r}
+#Loading libraries, and suppressing messages
+suppressMessages({
+  # Loading Necessary libraries
+  library(caret)
+  library(randomForest)
+  library(rio)
+  library(tidyverse)
+  library(ggplot2)
+  library(fastDummies)
+  library(plotly)
+
+})
+
+```
+
+## Part One: Data Analysis
+
+For this section, I used the [Global Burden of Disease database](https://vizhub.healthdata.org/gbd-results/?params=gbd-api-2019-public/1c30036d07beb9823d892e3e6031dc18) GBD Database. This database records disease burden across various risk and causes, globally. This includes measures such as Disability Adjusted Life Years,which measures years of healthy life lost, typically from premature death or living with disability due to illness, injury, and death. Other measures includes deaths, and prevalence, incidence etc. For my dataset, I gathered only data for Western Europe, as derived in the database, to show disease burden trend in the sub-region between 2015 and 2019 (for parameters used to get data see image below). Dataset includes features such as
+
+-   Measure: Death, DALYs
+
+-   Sex: Male, Female
+
+-   Location: Country
+
+-   Cause: Cause of burden, i.e. disease, or other risk factor
+
+-   Age: Age group
+
+-   Metric: Rate per 100,000, Number (i,e, total)
+
+-   Year: ranges from 2015-2019
+
+-   Upper: Confidence Interval upper bound for value
+
+-   Lower: Confidence Interval lower bound for value
+
+![](images/Screenshot 2023-12-20 at 18.17.56.png)
+
+figure 1 showing search term to derive data from GBD
+
+**Reference:** Global Burden of Disease Collaborative Network. Global Burden of Disease Study 2019 (GBD 2019) Results. Seattle, United States: Institute for Health Metrics and Evaluation (IHME), 2020. Available from <https://vizhub.healthdata.org/gbd-results/.>
+
+### Task 1: Loading the data
+
+```{r}
+diseaseBurden <- import("BurdenOfDisease.csv", setclass = "tibble")
+```
+
+```{r}
+str(diseaseBurden, width = 84, strict.width = "cut")
+```
+
+```{r}
+dimension <- dim(diseaseBurden)
+paste("Total number of rows:", dimension[1], 
+      "| Total number of columns:", dimension[2] )
+```
+
+The dataset `diseaseBurden` has been loaded successfully and has 2944 rows and 10 columns.\
+
+### Task 2: Most Prevalent cause of death across all countries
+
+In this section, I would be showing the most prevalent cause of death (i.e top10) combined across all countries in Western Europe.
+
+```{r}
+#Returns The most prevalent cause of death
+
+prevalent_causes_of_death <- diseaseBurden %>%
+  filter(measure == "Deaths" & metric == "Number") %>%
+  group_by(cause) %>%
+  summarize(total_deaths = sum(val), .groups = "drop") %>%
+  arrange(desc(total_deaths)) %>%
+  top_n(10, total_deaths)
+
+```
+
+```{r}
+#Table to print most prevalent cause of deaths
+knitr::kable(prevalent_causes_of_death, 
+             caption = "Top Causes of Death and Total Deaths",
+             align = 'c',  # Center align
+             format = "html")
+```
+
+From the table above, we can see the top cause of death across all countries is Ischemic heart disease, with a total of 2876567.5 deaths, a distant second is Stroke a distant second with only 1512894.7 deaths. This shows across countries selected, cardiovascular diseases (i.e stroke and Ischemic heart disease) by far were the largest cause of mortality.
+
+### Task 3: DALYs by Countries
+
+Disability Adjusted Life Years by countries.
+
+```{r}
+dalys_by_country <- diseaseBurden %>%
+  filter(measure == "DALYs (Disability-Adjusted Life Years)" & metric == "Number") %>%
+  group_by(location) %>%
+  summarize(total_disability = sum(val), .groups = "drop") %>%
+  arrange(desc(total_disability)) 
+ 
+```
+
+|     |
+|:---:|
+|     |
+
+```{r}
+knitr::kable(dalys_by_country, 
+             caption = "Top Causes of Death and Total Deaths",
+             align = 'c',  # Center align
+             format = "html")
+```
+
+The table above shows the total number of DALYs in each country in Western Europe as retrieved from the GBD database. From observations we can see Germany is the country with the most DALYs, with France and the Netherlands coming in at second and third respectively. Monaco had the least DALYs.
+
+### Task 4: Country with Most Deaths
+
+```{r}
+# Summarize total deaths by country
+max_death_by_country_summary <- diseaseBurden |>
+  filter(measure == "Deaths" & metric == "Number") |>
+  group_by(location) |>
+  summarize(total_death = sum(val), .groups = "drop")
+
+# Find the country with the maximum total deaths
+max_death_index <- which.max(max_death_by_country_summary$total_death)
+max_death_country <- max_death_by_country_summary[max_death_index, ]
+
+
+```
+
+```{r}
+paste("Country with the most death is: ", max_death_country$location, "With "
+      , round(max_death_country$total_death, digits =2), "deaths")
+```
+
+Germany again recorded the most deaths with about 2516815.9 deaths.
+
+### Task 5: Death Rate by Country
+
+```{r}
+death_rate_by_country_year <- diseaseBurden|>
+  filter(measure == "Deaths" & metric == "Rate") |>
+  group_by(location, year) |>
+  summarize(death_rate = mean(val), .groups = "drop")
+death_rate_by_country_year
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(death_rate_by_country_year, aes(x = location, y = death_rate)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 1) +  # Highlight outliers
+  theme_minimal() +
+  labs(title = "Comparison of Death Rates Across Countries by Year",
+       x = "Country",
+       y = "Death Rate") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Improve x-axis labels readability
+        plot.title = element_text(hjust = 0.5),            # Center the title
+        legend.position = "none")                          # Remove legend
+ 
+```
+
+figure 1.0. The table above shows the average death rates per 100,000 people across all Western European Countries. We can see that although, Germany recorded the highest number of deaths between 2015-2019, when we consider the average death rates however, we can see Greece and Monaco had the highest death rate, with a median of about 42 deaths per 100,000 and 38 deaths per 100,000
+
+### Task 6: Death Rate By Sex and Age Group and Cause
+
+```{r}
+daly_rate_by_sex_gender <- diseaseBurden|>
+  filter(measure == "DALYs (Disability-Adjusted Life Years)" & metric == "Rate") |>
+  group_by(age, sex) |>
+  summarize(daly_rate = mean(val), .groups = "drop")
+
+```
+
+```{r}
+ggplot(daly_rate_by_sex_gender, aes(x = age, y = daly_rate, fill = sex)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  theme_minimal() +
+  labs(title = "DALY Rate by Age Group and Sex",
+       x = "Age Group",
+       y = "DALY Rate") +
+  scale_fill_brewer(palette = "Set1")
+```
+
+figure 1.2.: Shows the average DALYs across all age groups by sex. We can observe a trend that as people get older, the number of years they loss due to disability. More so, We can also see a clear trend across age groups showing men disproportionately loss more years due to disability, with the gap between both sexes getting greater as age group increases.
+
+### Task 7:  Death Rate By Disease
+
+```{r}
+disease_death_rate_by_cause <- diseaseBurden|>
+  filter(measure == "Deaths" & metric == "Rate") |>
+  group_by(cause, year) |>
+  summarize(death_rate = mean(val), .groups = "drop")
+```
+
+```{r}
+ggplot(disease_death_rate_by_cause, aes(x = year, y = death_rate, color = cause)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "Death Rate by Disease Over Years",
+       x = "Year",
+       y = "Death Rate") +
+  theme(legend.position = "right")
+```
+
+Figure 1.3: Shows the average death rate per 100,000 by cause across all Western European countries. By far Ischemic heart disease caused the most deaths with about 150 per 100,000.
+
+### Task 8: Percentage Change in mortality Between 2015-2019
+
+In this section, I would be checking the percentage change in mortaly across each country in western Europe between 2015 and 2019
+
+```{r}
+
+prevalent_causes_of_death_change <- diseaseBurden |>
+  filter(measure == "Deaths", metric == "Rate", year %in% c(2015, 2019)) |>
+  group_by(location, year) |>
+  summarize(total_deaths = mean(val), .groups = "drop") |>
+  pivot_wider(names_from = year, values_from = total_deaths) |>
+  mutate(percentage_change = round(((`2019` - `2015`) / `2015`) * 100, 2)) |>
+  arrange(desc(percentage_change))
+
+```
+
+
+```{r}
+knitr::kable(prevalent_causes_of_death_change, 
+             caption = "Percentage Change in Death rates",
+             align = 'c',  # Center align
+             format = "html")
+```
+
+Overall, the trend across Western Europe points towards the death rate reducing, however, Greece for instance had a 10% increase in death rate per 100,000, more that 3 times the amount of the second country with death rate increases Malta
+
+## Part 2: R Package
+
+In this section, I would be discussing and utilising a new R package which was not used during the module, and also applying it to a new dataset. My package of choice for this section is the **Classification and Regression Training (`caret`) package**. The package utilises a wide range of functionalities, with the aim of streamlining the process of model training, model tuning and performance evaluation. Some of these functionalities includes:
+
+-   Data splitting
+
+-   Pre-processing
+
+-   feature selection
+
+-   model tuning
+
+-   performance evaluation
+
+I would be demonstrating some of this functionalities, with the aim of building and testing a machine learning model with the ability to accurately classify if a person has a heart disease.
+
+The dataset `heart.csv` was downloaded from [Kaggle's Heart Failure Prediction Dataset](https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction?select=heart.csv) by FEDESORIANO.
+
+Features:
+
+-   Age: age of the patient \[years\]
+
+-   Sex: sex of the patient \[M: Male, F: Female\]
+
+-   ChestPainType: chest pain type \[TA: Typical Angina, ATA: Atypical Angina, NAP: Non-Anginal Pain, ASY: Asymptomatic\]
+
+-   RestingBP: resting blood pressure \[mm Hg\]
+
+-   Cholesterol: serum cholesterol \[mm/dl\]
+
+-   FastingBS: fasting blood sugar \[1: if FastingBS \> 120 mg/dl, 0: otherwise\]
+
+-   RestingECG: resting electrocardiogram results \[Normal: Normal, ST: having ST-T wave abnormality (T wave inversions and/or ST elevation or depression of \> 0.05 mV), LVH: showing probable or definite left ventricular hypertrophy by Estes' criteria\]
+
+-   MaxHR: maximum heart rate achieved \[Numeric value between 60 and 202\]
+
+-   ExerciseAngina: exercise-induced angina \[Y: Yes, N: No\]
+
+-   Oldpeak: oldpeak = ST \[Numeric value measured in depression\]
+
+-   ST_Slope: the slope of the peak exercise ST segment \[Up: upsloping, Flat: flat, Down: downsloping\]
+
+-   HeartDisease: output class \[1: heart disease, 0: Normal\]
+
+**caret reference:** Kuhn, M. (2008). Building Predictive Models in R Using the caret Package. Journal of Statistical Software, 28(5), 1--26. <https://doi.org/10.18637/jss.v028.i05>
+
+### Task 1: Loading the data
+
+```{r}
+heart_data <- import("heart.csv", setclass = "tibble")
+```
+
+```{r}
+str(heart_data, width = 84, strict.width = "cut")
+```
+
+### Task 2: Creating Dummy Variables
+
+Since some of my columns are of the character type (i.e. categorical data), i would be creating dummy variables for each of them th help build our models. While some models could handle categorical data, it is important they are still encoded, to ensure our outputs are interpretable, and improves the models ability to make decision or spot patterns. Binary categorical columns in the dataset like `sex` would be one-hot encoded meaning one of the sexes would be represented by 1 (i.e male) and the other 0 (i.e. female), while multi-class categorical features like `ChestPainType`, each class would be divided into new label with 0, representing if item isn't the class and 1 if for that if indeed it belongs to the class or column. this was done to ensure multicolinearity.
+
+```{r}
+
+#for loop that checks if the column is of type chr, checks number of categories in column.
+for (col in names(heart_data)) {
+  if (is.character(heart_data[[col]])) {
+    unique_values <- unique(heart_data[[col]])
+    num_unique_values <- length(unique_values)
+
+    if (num_unique_values == 2) {
+      # Mapping binary categorical variables to 0 and 1
+      heart_data[[col]] <- ifelse(heart_data[[col]] == unique_values[1], 1, 0)
+      cat(col, ": ", unique_values[1], "=1 ", unique_values[2], "=0\n")
+    } else if (num_unique_values > 2) {
+      # Creating dummy variables for columns with more than two unique values
+      heart_data <- dummy_cols(heart_data, select_columns = col, remove_first_dummy = TRUE, remove_selected_columns = TRUE)
+    }
+  }
+
+}
+
+# Converting the HeartDisease variable to a factor
+heart_data$HeartDisease <- factor(heart_data$HeartDisease, levels = c(0, 1))
+
+```
+
+### Task 3: Splitting The dataset:
+
+One of the unique functionalities provided by `caret` is the Train-Test split (i.e. holdout technique). In the following code below i would be splitting the data into training and testing models in preparation of our modelling and testing phase. The hold-out technique, allows us test the generalisability of our model to unseen data.
+
+```{r}
+#setting seed to ensure reproducibility 
+set.seed(50)
+
+# Splitting data into training and testing sets
+trainIndex <- createDataPartition(heart_data$HeartDisease, p = .7, list = FALSE, times = 1)
+trainData <- heart_data[trainIndex, ]
+testData <- heart_data[-trainIndex, ]
+```
+
+### Task 4: Model Building and Testing with hold-out and evaluation
+
+In this section we are going to test some functionalities of `claret` such as training a model and evaluating the results. Since this is a classification task, I would be using two models, a logistic regression and a random forest and comparing their results.
+
+### a. Logistic Regression
+
+```{r}
+# Training a logistic regression model
+logistic_model <- train(HeartDisease ~ ., data = trainData, method = "glm", family = "binomial")
+
+# Summarsing the model
+print(logistic_model)
+
+```
+
+\
+**RESULTS**: The logistic regression model has an accuracy of 86% on the training data.
+
+```{r}
+# Predict on test data
+predictions <- predict(logistic_model, testData)
+
+# Evaluate model performance
+confMatrix <- confusionMatrix(predictions, testData$HeartDisease)
+print(confMatrix)
+```
+
+\
+**RESULTS**: The logistic regression model seem to generalise well to unseen data, with an accuracy of 84% (CI: 79%, 88%).
+
+-   True Positive (Prediction = 0, Reference = 0): 103
+
+-   False Negative (Prediction = 0, Reference = 1): 23
+
+-   False Positive (Prediction = 1, Reference = 0): 20
+
+-   True Negative (Prediction = 1, Reference = 1): 129
+
+The model's shows good a high accuracy and also a high Kappa value suggesting substantial agreement. The balanced accuracy, sensitivity, and specificity are also high, indicating that the model performs well in identifying both classes, althougt might be over predicting the majority class. The confidence interval for accuracy suggests the model's performance is reliably high. The model significantly outperforms the baseline of predicting the most frequent class. The similar rates of false positives and false negatives (as suggested by Mcnemar's test) indicate a balanced prediction capability for both classes.
+
+### B. Random Forest
+
+```{r}
+# Training a logistic regression model
+rf_model <- train(HeartDisease ~ ., data = trainData, method = "rf")
+
+# Summarize the model
+print(rf_model)
+
+
+# Predict on test data
+rf_predictions <- predict(rf_model, testData)
+
+# Evaluate model performance
+confMatrix <- confusionMatrix(rf_predictions, testData$HeartDisease)
+print(confMatrix)
+```
+
+**RESULTS:** The random forest results are s follows:
+
+Resampling Results: `mtry` shows the accuracy(or performance) of the model based on random samples at each split of the random forest. the result are as follows:
+
+-   For **`mtry = 2`**: Accuracy is 0.8775, Kappa is 0.7508. (Selected as optimal result)
+
+-   For **`mtry = 8`**: Accuracy is 0.8578, Kappa is 0.7112.
+
+-   For **`mtry = 15`**: Accuracy is 0.8433, Kappa is 0.6817.
+
+Contigency table:
+
+-   True Positive (TP, Prediction = 0, Reference = 0): 98
+
+-   False Negative (FN, Prediction = 0, Reference = 1): 17
+
+-   False Positive (FP, Prediction = 1, Reference = 0): 25
+
+-   True Negative (TN, Prediction = 1, Reference = 1): 135
+
+The model seem to generalsie well to unseen data as well, with an accuracy of 85% (CI: 80% - 90%), and also shows a good Kappa value as well, showing it is better than random chance. The optimal **`mtry`** value of 2 indicates that using just two randomly selected predictors at each split of the decision tree yields the best results in this scenario. The absence of a significant difference in false positives and false negatives (Mcnemar's test) points towards a balanced prediction capability for both classes.
+
+**Overall result**: the random forest performed slightly better at correctly classifing in terms of model accuracy than the logical regression. However, when it comes to classifying a person who has disease with the risk factors provided, than the logistic regression is slightly better, having identified 103 true positives vs the random forests's 103.
+
+### Task 5: Cross validation
+
+Another functionality of `caret` is for cross validation. This is a different technique for testing and validating the performance of models and particularly good for small scale data. It works by using `k-fold -1` for training and the minused 1 for testing then aggregates the results.
+
+```{r}
+control <- trainControl(method="cv", number=5)
+
+# Defining hyper parameters
+grid <- expand.grid(.mtry = 2:4)
+
+# Training the model
+RF_model <- train(HeartDisease ~ ., data = heart_data, method = "rf", 
+                    trControl = control, tuneGrid = grid)
+
+# View the best parameters
+print(RF_model$bestTune)
+print(RF_model)
+
+
+
+```
+
+**Result:** Overall, using the cross-validation method, we have improved the results of the random forest on the test data (i.e. the models generalisability) from 85% in the hold-out test, to 89% in the cross validation method
+
+### Task 6: Selecting most important feature
+
+We can also use the random forest model to search for best features and then use thaht to build a new model
+
+```{r}
+#selecting most immportant features from random forest
+importance <- varImp(RF_model, scale = FALSE)
+
+# printing feature importance
+print(importance)
+
+# sorting features by importance
+sorted_importance <- importance$importance[order(importance$importance[,1], decreasing = TRUE),]
+print(sorted_importance)
+
+```
+
+Above we can see the most important or informative features
+
+```{r}
+#  top 5 features
+top_5_features <- c("ST_Slope_Up", "ST_Slope_Flat", "Oldpeak", "MaxHR", "ExerciseAngina")
+
+# using top5 features subset of the dataset
+subset_data <- heart_data[, c(top_5_features, "HeartDisease")]
+
+# Setting up cross-validation controls
+control <- trainControl(method = "cv", number = 5)
+
+# Definin hyperparameters grid
+grid <- expand.grid(.mtry = 2:4)
+
+# training the model using only the top 5 features
+RF_model_top5 <- train(HeartDisease ~ ., data = subset_data, method = "rf", 
+                       trControl = control, tuneGrid = grid)
+
+# priinting the best parameters and the retrained model summary
+print(RF_model_top5$bestTune)
+print(RF_model_top5)
+
+
+```
+
+**Result**: Using only the important features did not improve our results, in fact it recorded the lowest scores of all the model of 82%. However it points towards the importance of the features selected in correctly classifying a person as having a heart disease or not.
+
+## Part 3: Functions/Programming
+
+For this section, I would be building a `s3 class` which uses a function and different method to print details about the dataset, summarises the dataset and plots a graph showing number of seasons played vs average number of goals and assist scored, users cans elect either stat as input, but the code only allows one of each. the dataset used `season_goals.csv` is from Tidy tuesday's data collection, with this one gotten from [Hockey Goals](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-03-03/readme.md) dataset collection.
+
+Features and Definitions:
+
+| variable           | class     | description                                                                       |
+|--------------------|-----------|-----------------------------------------------------------------------------------|
+| rank               | double    | Overall goals ranking (1 - 250)                                                   |
+| position           | character | Position = player position (C = center, RW = Right Wing, LW = left Wing)          |
+| hand               | character | Dominant hand (left or right)                                                     |
+| player             | character | Player name                                                                       |
+| years              | character | Season years (year-yr)                                                            |
+| total_goals        | double    | Total goals scored in career                                                      |
+| status             | character | Status = retired or active                                                        |
+| yr_start           | double    | year started in NHL                                                               |
+| season             | character | Specific season for the player                                                    |
+| age                | double    | Age during season                                                                 |
+| team               | character | Team during season                                                                |
+| league             | character | League during season                                                              |
+| season_games       | double    | Games played in the season                                                        |
+| goals              | double    | Goals scored in the season                                                        |
+| assists            | double    | Assists in the season                                                             |
+| points             | double    | Points in the season                                                              |
+| plus_minus         | double    | Plus Minus in the season - Team points minus opponents points scored while on ice |
+| penalty_min        | double    | Penalty Minutes in the season                                                     |
+| goals_even         | double    | Goals scored while even strength in a season                                      |
+| goals_power_play   | double    | Goals scored on powerplay in a season                                             |
+| goals_short_handed | double    | Goals short handed in a season                                                    |
+| goals_game_winner  | double    | Goals that were game winner in a season                                           |
+| headshot           | character | Player headshot (URL to image of their head)                                      |
+
+### Task 1: Loading Data
+
+```{r}
+player_stat <- import("season_goals.csv", setclass = "tibble")
+
+
+```
+
+```{r}
+str(player_stat)
+```
+
+### Task 2: defining S3 class
+
+```{r}
+# Defining  the S3 class
+hockeyStats <- function() {
+    structure(list(data = NULL, analysis = NULL, plot = NULL), class = "hockeyStats")
+}
+```
+
+The code above defines the S3 Class I would be using to analyse the number of goals or assists scored by each player in the NHL. The `data` is intended to hold the dataset, `analysis` result, and `plot` is meant for a graphical representation
+
+### Task 3: Function for implementing data analysis
+
+```{r}
+# method for data analysis
+analyzeHockeyData <- function(data, stat = "goals") {
+    # Check for mandatory columns
+    mandatory_columns <- c(stat, "player", "position", "season")
+    missing_columns <- setdiff(mandatory_columns, names(data))
+    if (length(missing_columns) > 0) {
+        stop("Data must have the following features: ", paste(missing_columns, collapse = ", "))
+    }
+
+    # Calculates the average stat (i.e. goals or assists) and number of seasons
+    avg_stat <- aggregate(reformulate("player", stat), data = data, mean)
+    names(avg_stat)[2] <- "avg_stat"
+    num_seasons <- data |> group_by(player) |> summarise(seasons = n_distinct(season))
+
+    # Merging the  data
+    analysis_data <- merge(avg_stat, num_seasons, by = "player")
+    analysis_data <- merge(analysis_data, data[, c("player", "position")], by = "player")
+
+    # Store results in hockeyStats object
+    stats <- hockeyStats()
+    stats$data <- data
+    stats$analysis <- analysis_data
+    return(stats)
+}
+```
+
+The `analyzeHockeyData` function as an implementation is used to analyse a hockey dataset, which focuses on players statistics (i.e. goals or assists) and calculates the average for each player in the dataset. it also calculates the number of seasons played, checks for the required columns, and returns a `hockeyStats` object with player averages.
+
+### Task 4: Printing, Summary and Plotting methods
+
+```{r}
+# Printing method
+print.hockeyStats <- function(x) {
+    print(paste("Hockey Data Analysis with", nrow(x$data), "records"))
+}
+registerS3method("print", "hockeyStats", print.hockeyStats)
+```
+
+```{r}
+# Summary method
+summary.hockeyStats <- function(object) {
+    list(
+        AverageStat = summary(object$analysis$avg_stat),
+        SeasonsPlayed = summary(object$analysis$seasons)
+    )
+}
+registerS3method("summary", "hockeyStats", summary.hockeyStats)
+```
+
+the following code is defines a method which takes the user inputed stat and returns a graphical plot showing
+
+```{r}
+# Plot method with plotly for interactive plot
+plot.hockeyStats <- function(x) {
+    p <- ggplot(x$analysis, aes(x = seasons, y = avg_stat, text = player, color = position)) +
+        geom_point() +
+        labs(title = "Average Stat vs. Seasons Played", x = "Average Stat", y = "Seasons Played")
+
+    # making plot interactive
+    ggplotly(p, tooltip = "text")
+}
+registerS3method("plot", "hockeyStats", plot.hockeyStats)
+```
+
+-   The `print method` entails how objects are printed, it displays a message with number of records in the dataset
+
+-   The `Summary Method` provides summary of `hockeyStat` objects, mean, median and mode of selected stats and number of seasons played
+
+-   The `Plot Method` Creates an interactive plot which shows average statistic vs seasons played, users can see players name when they over around a data point
+
+### Task 5: Results
+
+```{r}
+result <- analyzeHockeyData(player_stat, stat = "goals")  # can switch between goals and assists
+print(result)
+
+```
+
+The total number of records in the dataset is 4810 (i.e. rows).
+
+```{r}
+summary(result)
+```
+
+The results above shows descriptive statistics of the stat selected and seasons played. we can see the median, mean and inter quartile range
+
+```{r}
+# Plotting
+plot(result)
+```
+
+Figure 3.1. showing the average number of selected stats vs number of seasons played by each player. Users can hover around each point to see player names
